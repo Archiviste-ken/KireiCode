@@ -1,4 +1,6 @@
 import path from "node:path";
+import { createRequire } from "node:module";
+import type Parser from "tree-sitter";
 
 import type { SourceFileInput, SupportedLanguage } from "@/core/ir";
 import { FILE_EXTENSION_LANGUAGE_MAP } from "@/utils";
@@ -19,47 +21,150 @@ export interface ParseResult {
   nodes: SyntaxNode[];
 }
 
-const FUNCTION_PATTERNS = [
-  /\bfunction\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g,
-  /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{/g,
-];
+const require = createRequire(import.meta.url);
 
-const API_CALL_PATTERN =
-  /\b(?:fetch|axios\.(?:get|post|put|delete|patch)|client\.(?:get|post|put|delete|patch))\s*\(\s*(["'`])([^"'`]+)\1/g;
+type RuntimeParser = {
+  parse(input: string): { rootNode: Parser.SyntaxNode };
+  setLanguage(language: unknown): void;
+};
 
-function toLineNumber(source: string, charIndex: number): number {
-  return source.slice(0, charIndex).split(/\r?\n/).length;
+let runtimeParser: RuntimeParser | null | undefined;
+
+function getRuntimeParser(): RuntimeParser | null {
+  if (runtimeParser !== undefined) {
+    return runtimeParser;
+  }
+
+  try {
+    const TreeSitter = require("tree-sitter") as {
+      new (): RuntimeParser;
+    };
+    const JavaScript = require("tree-sitter-javascript") as unknown;
+    const parser = new TreeSitter();
+    parser.setLanguage(JavaScript);
+    runtimeParser = parser;
+  } catch {
+    runtimeParser = null;
+  }
+
+  return runtimeParser;
 }
 
-function extractBracedBlock(
-  source: string,
-  openBraceIndex: number,
-): { body: string; endIndex: number } | null {
-  if (openBraceIndex < 0 || source[openBraceIndex] !== "{") {
+const FUNCTION_NODE_TYPES = [
+  "function_declaration",
+  "function_expression",
+  "arrow_function",
+] as const;
+
+const API_CALLEES = new Set([
+  "fetch",
+  "axios.get",
+  "axios.post",
+  "axios.put",
+  "axios.patch",
+  "axios.delete",
+  "client.get",
+  "client.post",
+  "client.put",
+  "client.patch",
+  "client.delete",
+]);
+
+function toLine(position: Parser.Point): number {
+  return position.row + 1;
+}
+
+function unwrapQuotedValue(value: string): string | null {
+  const match = value.match(/^(["'`])(.*)\1$/s);
+  return match?.[2] ?? null;
+}
+
+function resolveFunctionName(node: Parser.SyntaxNode): string {
+  const directName = node.childForFieldName("name")?.text;
+  if (directName) {
+    return directName;
+  }
+
+  const parentName =
+    node.parent?.type === "variable_declarator"
+      ? node.parent.childForFieldName("name")?.text
+      : undefined;
+
+  return parentName ?? "anonymous";
+}
+
+function toApiChildren(
+  filePath: string,
+  functionNode: Parser.SyntaxNode,
+): SyntaxNode[] {
+  return functionNode
+    .descendantsOfType("call_expression")
+    .flatMap((callNode) => {
+      const callee = callNode.childForFieldName("function")?.text;
+      if (!callee || !API_CALLEES.has(callee)) {
+        return [];
+      }
+
+      const rawArgument = callNode
+        .childForFieldName("arguments")
+        ?.namedChild(0)?.text;
+      const endpoint = rawArgument ? unwrapQuotedValue(rawArgument) : null;
+
+      return [
+        {
+          id: `${filePath}:api:${callNode.startIndex}`,
+          kind: "api-call" as const,
+          name: endpoint ?? callee,
+          startLine: toLine(callNode.startPosition),
+          endLine: toLine(callNode.endPosition),
+          metadata: {
+            endpoint: endpoint ?? callee,
+          },
+          children: [],
+        },
+      ];
+    });
+}
+
+function toTryCatchChildren(
+  filePath: string,
+  functionNode: Parser.SyntaxNode,
+): SyntaxNode[] {
+  const hasTryStatement =
+    functionNode.descendantsOfType("try_statement").length > 0;
+  const hasCatchClause =
+    functionNode.descendantsOfType("catch_clause").length > 0;
+
+  if (!hasTryStatement || !hasCatchClause) {
+    return [];
+  }
+
+  return [
+    {
+      id: `${filePath}:tc:${functionNode.startIndex}`,
+      kind: "try-catch",
+      name: `try-catch:${resolveFunctionName(functionNode)}`,
+      startLine: toLine(functionNode.startPosition),
+      endLine: toLine(functionNode.endPosition),
+      metadata: {
+        guarded: true,
+      },
+      children: [],
+    },
+  ];
+}
+
+export function parseCode(code: string): Parser.SyntaxNode | null {
+  const parser = getRuntimeParser();
+  if (!parser) {
     return null;
   }
 
-  let depth = 0;
-  for (let index = openBraceIndex; index < source.length; index += 1) {
-    const character = source[index];
-
-    if (character === "{") {
-      depth += 1;
-      continue;
-    }
-
-    if (character === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return {
-          body: source.slice(openBraceIndex + 1, index),
-          endIndex: index,
-        };
-      }
-    }
+  try {
+    return parser.parse(code).rootNode;
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 export function detectLanguage(filePath: string): SupportedLanguage {
@@ -70,74 +175,34 @@ export function detectLanguage(filePath: string): SupportedLanguage {
 }
 
 export function parseSourceToSyntaxTree(input: SourceFileInput): ParseResult {
-  const nodes: SyntaxNode[] = [];
   const language = detectLanguage(input.path);
+  const rootNode = parseCode(input.content);
 
-  FUNCTION_PATTERNS.forEach((pattern) => {
-    let match = pattern.exec(input.content);
-    while (match) {
-      const functionName = match[1] ?? "anonymous";
-      const functionStart = match.index;
-      const openBraceIndex = input.content.indexOf("{", functionStart);
-      const extractedBlock = extractBracedBlock(input.content, openBraceIndex);
+  if (!rootNode) {
+    return {
+      filePath: input.path,
+      language,
+      nodes: [],
+    };
+  }
 
-      if (extractedBlock) {
-        const functionNode: SyntaxNode = {
-          id: `${input.path}:fn:${functionStart}`,
-          kind: "function",
-          name: functionName,
-          startLine: toLineNumber(input.content, functionStart),
-          endLine: toLineNumber(input.content, extractedBlock.endIndex),
-          metadata: {
-            scope: "file",
-          },
-          children: [],
-        };
-
-        let apiMatch = API_CALL_PATTERN.exec(extractedBlock.body);
-        while (apiMatch) {
-          const endpoint = apiMatch[2] ?? "unknown-endpoint";
-          const relativeIndex = apiMatch.index;
-          const absoluteIndex = functionStart + relativeIndex;
-
-          functionNode.children.push({
-            id: `${input.path}:api:${absoluteIndex}`,
-            kind: "api-call",
-            name: endpoint,
-            startLine: toLineNumber(input.content, absoluteIndex),
-            endLine: toLineNumber(input.content, absoluteIndex),
-            metadata: {
-              endpoint,
-            },
-            children: [],
-          });
-
-          apiMatch = API_CALL_PATTERN.exec(extractedBlock.body);
-        }
-
-        if (
-          /\btry\s*\{/.test(extractedBlock.body) &&
-          /\bcatch\s*\(/.test(extractedBlock.body)
-        ) {
-          functionNode.children.push({
-            id: `${input.path}:tc:${functionStart}`,
-            kind: "try-catch",
-            name: `try-catch:${functionName}`,
-            startLine: functionNode.startLine,
-            endLine: functionNode.endLine,
-            metadata: {
-              guarded: true,
-            },
-            children: [],
-          });
-        }
-
-        nodes.push(functionNode);
-      }
-
-      match = pattern.exec(input.content);
-    }
-  });
+  const nodes = rootNode
+    .descendantsOfType([...FUNCTION_NODE_TYPES])
+    .map((fnNode) => ({
+      id: `${input.path}:fn:${fnNode.startIndex}`,
+      kind: "function" as const,
+      name: resolveFunctionName(fnNode),
+      startLine: toLine(fnNode.startPosition),
+      endLine: toLine(fnNode.endPosition),
+      metadata: {
+        scope: "file",
+        syntaxType: fnNode.type,
+      },
+      children: [
+        ...toApiChildren(input.path, fnNode),
+        ...toTryCatchChildren(input.path, fnNode),
+      ],
+    }));
 
   return {
     filePath: input.path,
