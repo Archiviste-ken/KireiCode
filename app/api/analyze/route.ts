@@ -1,39 +1,51 @@
 import { NextResponse } from "next/server";
 
 import { analyzeRepository } from "@/core";
-import { scanRepositoryFiles } from "@/modules";
-import type { AnalyzeRequestBody } from "@/types";
 import { logger } from "@/utils";
 
 export const runtime = "nodejs";
 
+interface AnalyzeRouteBody {
+  repoUrl: string;
+  cloneTargetDirectory?: string;
+  cloneBranch?: string;
+  cloneDepth?: number;
+  existingFolderStrategy?: "reuse" | "clean" | "error";
+  options?: {
+    maxFiles?: number;
+    includeExtensions?: string[];
+    traceFromNodeId?: string;
+    traceDepth?: number;
+  };
+}
+
 export async function POST(request: Request): Promise<Response> {
   try {
-    const body = (await request.json()) as AnalyzeRequestBody;
-    let files = body.files ?? [];
+    const body = (await request.json()) as AnalyzeRouteBody;
 
-    if (files.length === 0 && body.repositoryPath) {
-      files = await scanRepositoryFiles(body.repositoryPath, body.options);
-    }
-
-    if (files.length === 0) {
+    if (!body.repoUrl) {
       return NextResponse.json(
-        {
-          error:
-            "No source files found. Provide `files` or a valid `repositoryPath`.",
-        },
+        { error: "`repoUrl` is required." },
         { status: 400 },
       );
     }
 
-    const result = await analyzeRepository(
-      body.options
-        ? {
-            files,
-            options: body.options,
-          }
-        : { files },
-    );
+    const pipelineInput = {
+      repositoryUrl: body.repoUrl,
+      ...(body.cloneTargetDirectory
+        ? { cloneTargetDirectory: body.cloneTargetDirectory }
+        : {}),
+      ...(body.cloneBranch ? { cloneBranch: body.cloneBranch } : {}),
+      ...(typeof body.cloneDepth === "number"
+        ? { cloneDepth: body.cloneDepth }
+        : {}),
+      ...(body.existingFolderStrategy
+        ? { existingFolderStrategy: body.existingFolderStrategy }
+        : {}),
+      ...(body.options ? { options: body.options } : {}),
+    };
+
+    const result = await analyzeRepository(pipelineInput);
 
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
