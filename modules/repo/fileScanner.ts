@@ -2,11 +2,10 @@ import path from "node:path";
 import { readFile, readdir } from "node:fs/promises";
 
 import type { AnalyzeRepositoryOptions, SourceFileInput } from "@/core";
-import {
-  DEFAULT_MAX_FILES,
-  IGNORED_DIRECTORIES,
-  SUPPORTED_SOURCE_EXTENSIONS,
-} from "@/utils";
+import { DEFAULT_MAX_FILES } from "@/utils";
+
+const DEFAULT_INCLUDE_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx"] as const;
+const BASE_IGNORED_DIRECTORIES = new Set(["node_modules", ".git"]);
 
 export interface ScanRepositoryOptions {
   includeExtensions?: string[];
@@ -16,6 +15,7 @@ export interface ScanRepositoryOptions {
 async function collectFiles(
   directoryPath: string,
   output: string[],
+  ignoredDirectories: Set<string>,
 ): Promise<void> {
   const entries = await readdir(directoryPath, { withFileTypes: true });
 
@@ -24,14 +24,10 @@ async function collectFiles(
       const resolved = path.join(directoryPath, entry.name);
 
       if (entry.isDirectory()) {
-        if (
-          IGNORED_DIRECTORIES.includes(
-            entry.name as (typeof IGNORED_DIRECTORIES)[number],
-          )
-        ) {
+        if (ignoredDirectories.has(entry.name)) {
           return;
         }
-        await collectFiles(resolved, output);
+        await collectFiles(resolved, output, ignoredDirectories);
         return;
       }
 
@@ -61,15 +57,18 @@ export async function scanRepositoryFiles(
   options?: ScanRepositoryOptions | AnalyzeRepositoryOptions,
 ): Promise<SourceFileInput[]> {
   const normalizedOptions = toScannerOptions(options);
+
   const extensions = new Set(
     (normalizedOptions.includeExtensions?.length
       ? normalizedOptions.includeExtensions
-      : [...SUPPORTED_SOURCE_EXTENSIONS]
+      : [...DEFAULT_INCLUDE_EXTENSIONS]
     ).map((item) => item.toLowerCase()),
   );
 
+  const ignoredDirectories = new Set(BASE_IGNORED_DIRECTORIES);
+
   const discoveredFiles: string[] = [];
-  await collectFiles(repositoryPath, discoveredFiles);
+  await collectFiles(repositoryPath, discoveredFiles, ignoredDirectories);
 
   const selectedFiles = discoveredFiles
     .filter((filePath) => extensions.has(path.extname(filePath).toLowerCase()))
