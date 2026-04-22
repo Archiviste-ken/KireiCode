@@ -2,8 +2,12 @@ import { createAnalysisRecord, createRepositoryRecord } from "./schemas";
 import type { AnalysisRecord, RepositoryRecord } from "./schemas";
 
 export interface MongoAdapter {
-  insertRepository(input: Omit<RepositoryRecord, "id" | "scannedAt">): Promise<RepositoryRecord>;
-  insertAnalysis(input: Omit<AnalysisRecord, "id" | "createdAt">): Promise<AnalysisRecord>;
+  insertRepository(
+    input: Omit<RepositoryRecord, "id" | "scannedAt">,
+  ): Promise<RepositoryRecord>;
+  insertAnalysis(
+    input: Omit<AnalysisRecord, "id" | "createdAt">,
+  ): Promise<AnalysisRecord>;
   findRepositoryByUrl(url: string): Promise<RepositoryRecord | null>;
 }
 
@@ -19,7 +23,9 @@ class InMemoryMongoAdapter implements MongoAdapter {
     return record;
   }
 
-  async insertAnalysis(input: Omit<AnalysisRecord, "id" | "createdAt">): Promise<AnalysisRecord> {
+  async insertAnalysis(
+    input: Omit<AnalysisRecord, "id" | "createdAt">,
+  ): Promise<AnalysisRecord> {
     const record = createAnalysisRecord(input);
     this.analyses.set(record.id, record);
     return record;

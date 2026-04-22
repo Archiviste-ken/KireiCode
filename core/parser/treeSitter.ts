@@ -24,7 +24,8 @@ const FUNCTION_PATTERNS = [
   /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{/g,
 ];
 
-const API_CALL_PATTERN = /\b(?:fetch|axios\.(?:get|post|put|delete|patch)|client\.(?:get|post|put|delete|patch))\s*\(\s*(["'`])([^"'`]+)\1/g;
+const API_CALL_PATTERN =
+  /\b(?:fetch|axios\.(?:get|post|put|delete|patch)|client\.(?:get|post|put|delete|patch))\s*\(\s*(["'`])([^"'`]+)\1/g;
 
 function toLineNumber(source: string, charIndex: number): number {
   return source.slice(0, charIndex).split(/\r?\n/).length;
@@ -62,7 +63,9 @@ function extractBracedBlock(
 }
 
 export function detectLanguage(filePath: string): SupportedLanguage {
-  const extension = path.extname(filePath).toLowerCase() as keyof typeof FILE_EXTENSION_LANGUAGE_MAP;
+  const extension = path
+    .extname(filePath)
+    .toLowerCase() as keyof typeof FILE_EXTENSION_LANGUAGE_MAP;
   return FILE_EXTENSION_LANGUAGE_MAP[extension] ?? "unknown";
 }
 
@@ -112,7 +115,10 @@ export function parseSourceToSyntaxTree(input: SourceFileInput): ParseResult {
           apiMatch = API_CALL_PATTERN.exec(extractedBlock.body);
         }
 
-        if (/\btry\s*\{/.test(extractedBlock.body) && /\bcatch\s*\(/.test(extractedBlock.body)) {
+        if (
+          /\btry\s*\{/.test(extractedBlock.body) &&
+          /\bcatch\s*\(/.test(extractedBlock.body)
+        ) {
           functionNode.children.push({
             id: `${input.path}:tc:${functionStart}`,
             kind: "try-catch",

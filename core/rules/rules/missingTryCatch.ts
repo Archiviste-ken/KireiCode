@@ -8,7 +8,9 @@ export const missingTryCatchRule: AnalysisRule = {
   evaluate(graph: AnalysisGraph): RuleFinding[] {
     const findings: RuleFinding[] = [];
     const protectedFunctionIds = new Set(
-      graph.edges.filter((edge) => edge.type === "handles").map((edge) => edge.from),
+      graph.edges
+        .filter((edge) => edge.type === "handles")
+        .map((edge) => edge.from),
     );
 
     graph.nodes

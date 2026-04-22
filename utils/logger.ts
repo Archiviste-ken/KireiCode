@@ -7,13 +7,18 @@ const LOG_PRIORITY: Record<LogLevel, number> = {
   error: 40,
 };
 
-const configuredLogLevel = (process.env.LOG_LEVEL?.toLowerCase() as LogLevel) ?? "info";
+const configuredLogLevel =
+  (process.env.LOG_LEVEL?.toLowerCase() as LogLevel) ?? "info";
 
 function shouldLog(level: LogLevel): boolean {
   return LOG_PRIORITY[level] >= LOG_PRIORITY[configuredLogLevel];
 }
 
-function write(level: LogLevel, message: string, context?: Record<string, unknown>): void {
+function write(
+  level: LogLevel,
+  message: string,
+  context?: Record<string, unknown>,
+): void {
   if (!shouldLog(level)) {
     return;
   }

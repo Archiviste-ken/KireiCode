@@ -2,14 +2,21 @@ import path from "node:path";
 import { readFile, readdir } from "node:fs/promises";
 
 import type { AnalyzeRepositoryOptions, SourceFileInput } from "@/core";
-import { DEFAULT_MAX_FILES, IGNORED_DIRECTORIES, SUPPORTED_SOURCE_EXTENSIONS } from "@/utils";
+import {
+  DEFAULT_MAX_FILES,
+  IGNORED_DIRECTORIES,
+  SUPPORTED_SOURCE_EXTENSIONS,
+} from "@/utils";
 
 export interface ScanRepositoryOptions {
   includeExtensions?: string[];
   maxFiles?: number;
 }
 
-async function collectFiles(directoryPath: string, output: string[]): Promise<void> {
+async function collectFiles(
+  directoryPath: string,
+  output: string[],
+): Promise<void> {
   const entries = await readdir(directoryPath, { withFileTypes: true });
 
   await Promise.all(
@@ -17,7 +24,11 @@ async function collectFiles(directoryPath: string, output: string[]): Promise<vo
       const resolved = path.join(directoryPath, entry.name);
 
       if (entry.isDirectory()) {
-        if (IGNORED_DIRECTORIES.includes(entry.name as (typeof IGNORED_DIRECTORIES)[number])) {
+        if (
+          IGNORED_DIRECTORIES.includes(
+            entry.name as (typeof IGNORED_DIRECTORIES)[number],
+          )
+        ) {
           return;
         }
         await collectFiles(resolved, output);
@@ -29,7 +40,9 @@ async function collectFiles(directoryPath: string, output: string[]): Promise<vo
   );
 }
 
-function toScannerOptions(options?: ScanRepositoryOptions | AnalyzeRepositoryOptions): ScanRepositoryOptions {
+function toScannerOptions(
+  options?: ScanRepositoryOptions | AnalyzeRepositoryOptions,
+): ScanRepositoryOptions {
   const normalized: ScanRepositoryOptions = {};
 
   if (options?.includeExtensions) {

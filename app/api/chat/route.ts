@@ -11,7 +11,10 @@ export async function POST(request: Request): Promise<Response> {
     const body = (await request.json()) as ChatRequestBody;
 
     if (!body.prompt || !body.analysis) {
-      return NextResponse.json({ error: "`prompt` and `analysis` are required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "`prompt` and `analysis` are required." },
+        { status: 400 },
+      );
     }
 
     const content = await generateExplanation({
@@ -26,6 +29,9 @@ export async function POST(request: Request): Promise<Response> {
       error: error instanceof Error ? error.message : String(error),
     });
 
-    return NextResponse.json({ error: "Failed to generate explanation." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to generate explanation." },
+      { status: 500 },
+    );
   }
 }

@@ -2,7 +2,12 @@ import type { IRFile, IRNode } from "@/core/ir";
 
 import type { ParseResult, SyntaxNode } from "./treeSitter";
 
-function walkNode(node: SyntaxNode, filePath: string, output: IRNode[], parentId?: string): void {
+function walkNode(
+  node: SyntaxNode,
+  filePath: string,
+  output: IRNode[],
+  parentId?: string,
+): void {
   const irNode: IRNode = {
     id: node.id,
     kind: node.kind,

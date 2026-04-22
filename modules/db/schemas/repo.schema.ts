@@ -5,7 +5,9 @@ export interface RepositoryRecord {
   scannedAt: string;
 }
 
-export function createRepositoryRecord(input: Omit<RepositoryRecord, "id" | "scannedAt">): RepositoryRecord {
+export function createRepositoryRecord(
+  input: Omit<RepositoryRecord, "id" | "scannedAt">,
+): RepositoryRecord {
   return {
     id: crypto.randomUUID(),
     url: input.url,

@@ -1,6 +1,11 @@
 import type { SourceLocation } from "@/core/ir";
 
-export type GraphNodeType = "file" | "function" | "api-call" | "try-catch" | "unknown";
+export type GraphNodeType =
+  | "file"
+  | "function"
+  | "api-call"
+  | "try-catch"
+  | "unknown";
 export type GraphEdgeType = "contains" | "calls" | "handles";
 
 export interface GraphNode {

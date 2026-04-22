@@ -9,7 +9,9 @@ function toGraphNodeType(kind: string): GraphNodeType {
   return "unknown";
 }
 
-export function buildAnalysisGraph(repositoryIR: CodeRepositoryIR): AnalysisGraph {
+export function buildAnalysisGraph(
+  repositoryIR: CodeRepositoryIR,
+): AnalysisGraph {
   const nodes: GraphNode[] = [];
   const edges: AnalysisGraph["edges"] = [];
   const idMap = new Map<string, string>();

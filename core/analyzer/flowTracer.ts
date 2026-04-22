@@ -6,7 +6,11 @@ export interface FlowTracePath {
   traversedEdgeTypes: string[];
 }
 
-export function traceFlow(graph: AnalysisGraph, startNodeId: string, maxDepth = 4): FlowTracePath {
+export function traceFlow(
+  graph: AnalysisGraph,
+  startNodeId: string,
+  maxDepth = 4,
+): FlowTracePath {
   const traversedNodeIds = new Set<string>([startNodeId]);
   const traversedEdgeTypes: string[] = [];
   let frontier = [startNodeId];

@@ -17,7 +17,9 @@ function buildSummary(analysis: RepositoryAnalysisResult): string {
   ].join("\n");
 }
 
-export async function generateExplanation(input: ExplanationInput): Promise<string> {
+export async function generateExplanation(
+  input: ExplanationInput,
+): Promise<string> {
   const summary = buildSummary(input.analysis);
   const systemPrompt =
     "You are a senior static-analysis engineer. Provide concise, actionable explanations and recommendations.";

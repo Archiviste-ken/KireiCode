@@ -18,7 +18,10 @@ export async function POST(request: Request): Promise<Response> {
 
     if (files.length === 0) {
       return NextResponse.json(
-        { error: "No source files found. Provide `files` or a valid `repositoryPath`." },
+        {
+          error:
+            "No source files found. Provide `files` or a valid `repositoryPath`.",
+        },
         { status: 400 },
       );
     }
@@ -38,7 +41,10 @@ export async function POST(request: Request): Promise<Response> {
       error: error instanceof Error ? error.message : String(error),
     });
 
-    return NextResponse.json({ error: "Failed to run analysis." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to run analysis." },
+      { status: 500 },
+    );
   }
 }
 

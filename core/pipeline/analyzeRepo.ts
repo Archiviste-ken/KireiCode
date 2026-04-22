@@ -2,7 +2,11 @@ import { analyzePerformance, traceFlow } from "@/core/analyzer";
 import { buildAnalysisGraph } from "@/core/graph";
 import type { CodeRepositoryIR, IRNode, SourceFileInput } from "@/core/ir";
 import { convertSyntaxTreeToIR, parseSourceToSyntaxTree } from "@/core/parser";
-import { DEFAULT_MAX_FILES, DEFAULT_TRACE_DEPTH, SUPPORTED_SOURCE_EXTENSIONS } from "@/utils";
+import {
+  DEFAULT_MAX_FILES,
+  DEFAULT_TRACE_DEPTH,
+  SUPPORTED_SOURCE_EXTENSIONS,
+} from "@/utils";
 
 export interface AnalyzeRepositoryOptions {
   maxFiles?: number;
@@ -38,11 +42,15 @@ function collectIrStats(nodes: IRNode[]): RepositoryAnalysisResult["irStats"] {
   };
 }
 
-function normalizeFiles(files: SourceFileInput[], options?: AnalyzeRepositoryOptions): SourceFileInput[] {
+function normalizeFiles(
+  files: SourceFileInput[],
+  options?: AnalyzeRepositoryOptions,
+): SourceFileInput[] {
   const allowedExtensions = new Set(
-    (options?.includeExtensions?.length ? options.includeExtensions : [...SUPPORTED_SOURCE_EXTENSIONS]).map((ext) =>
-      ext.toLowerCase(),
-    ),
+    (options?.includeExtensions?.length
+      ? options.includeExtensions
+      : [...SUPPORTED_SOURCE_EXTENSIONS]
+    ).map((ext) => ext.toLowerCase()),
   );
 
   const filtered = files.filter((file) => {
@@ -58,7 +66,9 @@ export async function analyzeRepository(input: {
   options?: AnalyzeRepositoryOptions;
 }): Promise<RepositoryAnalysisResult> {
   const normalizedFiles = normalizeFiles(input.files, input.options);
-  const parseResults = normalizedFiles.map((file) => parseSourceToSyntaxTree(file));
+  const parseResults = normalizedFiles.map((file) =>
+    parseSourceToSyntaxTree(file),
+  );
   const irFiles = parseResults.map((result) => convertSyntaxTreeToIR(result));
 
   const repositoryIR: CodeRepositoryIR = {
@@ -70,7 +80,13 @@ export async function analyzeRepository(input: {
 
   const allIrNodes = irFiles.flatMap((file) => file.nodes);
   const traces = input.options?.traceFromNodeId
-    ? [traceFlow(graph, input.options.traceFromNodeId, input.options.traceDepth ?? DEFAULT_TRACE_DEPTH)]
+    ? [
+        traceFlow(
+          graph,
+          input.options.traceFromNodeId,
+          input.options.traceDepth ?? DEFAULT_TRACE_DEPTH,
+        ),
+      ]
     : [];
 
   return {

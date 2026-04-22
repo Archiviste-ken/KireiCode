@@ -11,9 +11,17 @@ export interface CloneRepositoryInput {
   depth?: number;
 }
 
-export async function cloneRepository(input: CloneRepositoryInput): Promise<string> {
+export async function cloneRepository(
+  input: CloneRepositoryInput,
+): Promise<string> {
   const destination = path.resolve(input.targetDirectory);
-  const args = ["clone", input.repositoryUrl, destination, "--depth", String(input.depth ?? 1)];
+  const args = [
+    "clone",
+    input.repositoryUrl,
+    destination,
+    "--depth",
+    String(input.depth ?? 1),
+  ];
 
   if (input.branch) {
     args.push("--branch", input.branch);
