@@ -1,5 +1,7 @@
 import path from "node:path";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, rm, stat, readdir, rename } from "node:fs/promises";
+import https from "node:https";
+import AdmZip from "adm-zip";
 
 import { simpleGit } from "simple-git";
 
@@ -39,6 +41,83 @@ export async function cloneRepository(
   const destination = path.resolve(input.targetDirectory);
   const strategy = input.existingFolderStrategy ?? "reuse";
   const exists = await pathExists(destination);
+
+  if (process.env.VERCEL) {
+    let repoUrl = input.repositoryUrl;
+    if (repoUrl.endsWith(".git")) repoUrl = repoUrl.slice(0, -4);
+    
+    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!match) {
+      throw new Error("Only GitHub repositories are supported in Vercel serverless mode.");
+    }
+    
+    if (exists && strategy === "clean") {
+      await rm(destination, { recursive: true, force: true });
+    }
+    await mkdir(destination, { recursive: true });
+    
+    const branch = input.branch || "main";
+    const zipUrl = `${repoUrl}/archive/refs/heads/${branch}.zip`;
+    
+    await new Promise<void>((resolve, reject) => {
+      const download = (url: string) => {
+        https.get(url, { headers: { "User-Agent": "KireiCode-Engine" } }, (res) => {
+          if (res.statusCode === 301 || res.statusCode === 302) {
+             return download(res.headers.location!);
+          }
+          if (res.statusCode !== 200) {
+             if (branch === "main") {
+                const masterUrl = `${repoUrl}/archive/refs/heads/master.zip`;
+                https.get(masterUrl, { headers: { "User-Agent": "KireiCode-Engine" } }, (res2) => {
+                   if (res2.statusCode === 301 || res2.statusCode === 302) {
+                      return download(res2.headers.location!);
+                   }
+                   if (res2.statusCode !== 200) {
+                      return reject(new Error(`Failed to download repository zip. Status: ${res2.statusCode}`));
+                   }
+                   processRes(res2);
+                }).on("error", reject);
+                return;
+             }
+             return reject(new Error(`Failed to download repository zip: ${res.statusCode}`));
+          }
+          processRes(res);
+        }).on("error", reject);
+      };
+      
+      const processRes = (res: any) => {
+          const data: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => data.push(chunk));
+          res.on("end", async () => {
+            try {
+              const buffer = Buffer.concat(data);
+              const zip = new AdmZip(buffer);
+              zip.extractAllTo(destination, true);
+              
+              const extractedDirs = await readdir(destination);
+              const firstDir = extractedDirs[0];
+              if (extractedDirs.length === 1 && firstDir) {
+                 const rootFolder = path.join(destination, firstDir);
+                 const s = await stat(rootFolder);
+                 if (s.isDirectory()) {
+                    const files = await readdir(rootFolder);
+                    for (const file of files) {
+                       await rename(path.join(rootFolder, file), path.join(destination, file));
+                    }
+                    await rm(rootFolder, { recursive: true, force: true });
+                 }
+              }
+              resolve();
+            } catch (e) {
+              reject(e);
+            }
+          });
+      };
+      download(zipUrl);
+    });
+    
+    return destination;
+  }
 
   if (exists) {
     if (strategy === "clean") {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 
 import { analyzePerformance, traceFlow } from "@/core/analyzer";
@@ -17,11 +18,9 @@ import { cloneRepository, scanRepositoryFiles } from "@/modules/repo";
 import type { ExistingFolderStrategy } from "@/modules/repo";
 import { DEFAULT_TRACE_DEPTH } from "@/utils";
 
-const DEFAULT_CLONE_ROOT = path.resolve(
-  process.cwd(),
-  ".analysis-cache",
-  "repos",
-);
+const DEFAULT_CLONE_ROOT = process.env.VERCEL
+  ? path.join(os.tmpdir(), "kireicode-cache", "repos")
+  : path.resolve(process.cwd(), ".analysis-cache", "repos");
 
 function toDefaultCloneTargetDirectory(repositoryUrl: string): string {
   const hash = createHash("sha1")
