@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 
 import type {
   AnalyzeRepositoryOptions,
@@ -48,9 +48,11 @@ function writeStoredAnalysis(payload: StoredAnalysis): void {
 export function useApi() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [lastAnalysis, setLastAnalysis] = useState<StoredAnalysis | null>(() =>
-    readStoredAnalysis(),
-  );
+  const [lastAnalysis, setLastAnalysis] = useState<StoredAnalysis | null>(null);
+
+  useEffect(() => {
+    setLastAnalysis(readStoredAnalysis());
+  }, []);
 
   const triggerAnalysis = useCallback(
     async (repoUrl: string, options?: AnalyzeRepositoryOptions) => {

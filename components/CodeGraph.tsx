@@ -344,9 +344,14 @@ export default function CodeGraph({ nodes, edges }: CodeGraphProps) {
       });
     });
 
+    const validNodeIds = new Set(viewNodes.map((n) => n.id));
+    const safeLinks = viewLinks.filter(
+      (l) => validNodeIds.has(l.source) && validNodeIds.has(l.target)
+    );
+
     return {
       nodes: viewNodes,
-      links: viewLinks,
+      links: safeLinks,
       hasTruncatedNodes: nodes.length > MAX_RENDERED_NODES,
     };
   }, [edges, nodes]);
@@ -425,6 +430,7 @@ export default function CodeGraph({ nodes, edges }: CodeGraphProps) {
     >
       <ForceGraph2D
         ref={fgRef}
+        nodeId="id"
         width={dimensions.width}
         height={dimensions.height}
         graphData={graphData}
