@@ -25,7 +25,7 @@ export class GroqClient {
   constructor(options: GroqClientOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.GROQ_API_KEY ?? "";
     this.model =
-      options.model ?? process.env.GROQ_MODEL ?? "llama-3.1-70b-versatile";
+      options.model ?? process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
     this.endpoint =
       options.endpoint ?? "https://api.groq.com/openai/v1/chat/completions";
   }

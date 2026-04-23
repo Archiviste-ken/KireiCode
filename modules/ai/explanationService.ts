@@ -39,6 +39,74 @@ function buildSummary(analysis: RepositoryAnalysisResult): string {
   ].join("\n");
 }
 
+function severityWeight(severity: "low" | "medium" | "high"): number {
+  if (severity === "high") {
+    return 3;
+  }
+  if (severity === "medium") {
+    return 2;
+  }
+  return 1;
+}
+
+function buildLocalGuidance(
+  prompt: string,
+  analysis: RepositoryAnalysisResult,
+): string {
+  const rankedIssues = [...analysis.issues]
+    .sort((left, right) => {
+      const severityDelta =
+        severityWeight(right.severity) - severityWeight(left.severity);
+      if (severityDelta !== 0) {
+        return severityDelta;
+      }
+      return right.confidenceScore - left.confidenceScore;
+    })
+    .slice(0, 5);
+
+  const lines = [
+    "Local analysis guidance (AI provider unavailable)",
+    "",
+    `Performance score: ${analysis.performance.score} (${analysis.performance.riskLevel.toUpperCase()} risk)`,
+    `Files analyzed: ${analysis.fileCount}`,
+    `Findings: ${analysis.issues.length}`,
+    "",
+  ];
+
+  if (rankedIssues.length === 0) {
+    lines.push("No actionable findings were detected in this scan.");
+    return lines.join("\n");
+  }
+
+  lines.push("Top priorities:");
+  rankedIssues.forEach((issue, index) => {
+    lines.push(
+      `${index + 1}. [${issue.severity.toUpperCase()}] ${issue.message} (${issue.file} -> ${issue.function})`,
+    );
+  });
+
+  lines.push("");
+
+  if (/fix|resolve|improve|optimi|recommend|what should/i.test(prompt)) {
+    lines.push("Suggested next steps:");
+    lines.push(
+      "1. Address HIGH severity findings first, then MEDIUM findings.",
+    );
+    lines.push(
+      "2. Add targeted tests around affected files/functions before refactoring.",
+    );
+    lines.push(
+      "3. Re-run analysis after each batch of fixes and compare issue count/score.",
+    );
+  } else {
+    lines.push(
+      "Ask for a fix plan, refactor strategy, or test checklist for any specific finding above.",
+    );
+  }
+
+  return lines.join("\n");
+}
+
 function buildIssuePayload(issue: IssueData): IssueData {
   // Keep only structured metadata; never include raw source code in AI prompt.
   return {
@@ -48,9 +116,9 @@ function buildIssuePayload(issue: IssueData): IssueData {
     function: issue.function,
     message: issue.message,
     confidenceScore: issue.confidenceScore,
-    source: issue.source,
-    rule: issue.rule,
-    code: issue.code,
+    ...(issue.source ? { source: issue.source } : {}),
+    ...(issue.rule ? { rule: issue.rule } : {}),
+    ...(issue.code ? { code: issue.code } : {}),
   };
 }
 
@@ -139,11 +207,15 @@ export async function generateIssueExplanation(
     JSON.stringify(safeIssuePayload, null, 2),
   ].join("\n\n");
 
-  const client = new GroqClient();
-  const rawContent = await client.completeChat(modelPrompt, systemPrompt);
-  const parsed = parseIssueExplanationResponse(rawContent);
+  try {
+    const client = new GroqClient();
+    const rawContent = await client.completeChat(modelPrompt, systemPrompt);
+    const parsed = parseIssueExplanationResponse(rawContent);
 
-  return parsed ?? buildFallbackIssueExplanation(input.issue);
+    return parsed ?? buildFallbackIssueExplanation(input.issue);
+  } catch {
+    return buildFallbackIssueExplanation(input.issue);
+  }
 }
 
 export function buildIssueExplanationText(
@@ -175,9 +247,13 @@ export async function generateExplanation(
   const modelPrompt = `${summary}\n\nUser question: ${input.prompt}`;
 
   if (!process.env.GROQ_API_KEY) {
-    return `${summary}\n\nNo GROQ_API_KEY detected. Returning local summary only.`;
+    return buildLocalGuidance(input.prompt, input.analysis);
   }
 
-  const client = new GroqClient();
-  return client.completeChat(modelPrompt, systemPrompt);
+  try {
+    const client = new GroqClient();
+    return await client.completeChat(modelPrompt, systemPrompt);
+  } catch {
+    return buildLocalGuidance(input.prompt, input.analysis);
+  }
 }

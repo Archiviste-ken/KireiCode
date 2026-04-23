@@ -58,6 +58,12 @@ export async function cloneRepository(
       }
 
       const remoteUrl = await gitInTarget.remote(["get-url", "origin"]);
+      if (typeof remoteUrl !== "string" || remoteUrl.trim().length === 0) {
+        throw new Error(
+          `Unable to read origin remote for existing repository: ${destination}.`,
+        );
+      }
+
       if (
         normalizeRemoteUrl(remoteUrl) !==
         normalizeRemoteUrl(input.repositoryUrl)

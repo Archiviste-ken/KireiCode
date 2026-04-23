@@ -1,4 +1,5 @@
 import type Parser from "tree-sitter";
+import { parse as parseBabel } from "@babel/parser";
 
 import type {
   IRDependency,
@@ -34,6 +35,52 @@ const COMPLEXITY_NODE_TYPES = [
   "catch_clause",
   "logical_expression",
 ] as const;
+
+const BABEL_FUNCTION_TYPES = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+]);
+
+const BABEL_COMPLEXITY_TYPES = new Set([
+  "IfStatement",
+  "ForStatement",
+  "ForInStatement",
+  "ForOfStatement",
+  "WhileStatement",
+  "DoWhileStatement",
+  "SwitchCase",
+  "ConditionalExpression",
+  "LogicalExpression",
+  "CatchClause",
+]);
+
+type BabelNode = {
+  type: string;
+  start?: number;
+  end?: number;
+  async?: boolean;
+  computed?: boolean;
+  loc?: {
+    start: { line: number };
+    end: { line: number };
+  };
+  [key: string]: unknown;
+};
+
+interface MutableIRFunction {
+  id: string;
+  name: string;
+  filePath: string;
+  functionCalls: IRFunctionCall[];
+  isAsync: boolean;
+  hasTryCatch: boolean;
+  complexityScore: number;
+  location?: SourceLocation;
+}
 
 function toLocation(node: Parser.SyntaxNode): SourceLocation {
   return {
@@ -218,6 +265,270 @@ function collectFunctions(
     }));
 }
 
+function getBabelLocation(node: BabelNode): SourceLocation | undefined {
+  if (!node.loc) {
+    return undefined;
+  }
+
+  return {
+    startLine: node.loc.start.line,
+    endLine: node.loc.end.line,
+  };
+}
+
+function getBabelNodeChildren(node: BabelNode): BabelNode[] {
+  const children: BabelNode[] = [];
+
+  Object.keys(node).forEach((key) => {
+    const value = node[key];
+    if (!value) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (
+          item &&
+          typeof item === "object" &&
+          "type" in (item as Record<string, unknown>) &&
+          typeof (item as Record<string, unknown>).type === "string"
+        ) {
+          children.push(item as BabelNode);
+        }
+      });
+      return;
+    }
+
+    if (
+      typeof value === "object" &&
+      "type" in (value as Record<string, unknown>) &&
+      typeof (value as Record<string, unknown>).type === "string"
+    ) {
+      children.push(value as BabelNode);
+    }
+  });
+
+  return children;
+}
+
+function babelMemberName(node: BabelNode | undefined): string {
+  if (!node) {
+    return "unknown";
+  }
+
+  if (node.type === "Identifier" && typeof node.name === "string") {
+    return node.name;
+  }
+
+  if (node.type === "ThisExpression") {
+    return "this";
+  }
+
+  if (node.type === "PrivateName" && node.id && typeof node.id === "object") {
+    return babelMemberName(node.id as BabelNode);
+  }
+
+  if (node.type === "StringLiteral" && typeof node.value === "string") {
+    return node.value;
+  }
+
+  if (node.type === "NumericLiteral" && typeof node.value === "number") {
+    return String(node.value);
+  }
+
+  if (node.type === "MemberExpression") {
+    const objectName = babelMemberName(node.object as BabelNode | undefined);
+    const propertyName = babelMemberName(
+      node.property as BabelNode | undefined,
+    );
+    return `${objectName}.${propertyName}`;
+  }
+
+  return "unknown";
+}
+
+function babelFunctionName(node: BabelNode, parent?: BabelNode): string {
+  if (node.type === "FunctionDeclaration") {
+    const id = node.id as BabelNode | undefined;
+    if (id?.type === "Identifier" && typeof id.name === "string") {
+      return id.name;
+    }
+  }
+
+  if (
+    node.type === "ObjectMethod" ||
+    node.type === "ClassMethod" ||
+    node.type === "ClassPrivateMethod"
+  ) {
+    return babelMemberName(node.key as BabelNode | undefined);
+  }
+
+  if (parent?.type === "VariableDeclarator") {
+    return babelMemberName(parent.id as BabelNode | undefined);
+  }
+
+  if (parent?.type === "AssignmentExpression") {
+    return babelMemberName(parent.left as BabelNode | undefined);
+  }
+
+  return "anonymous";
+}
+
+function babelStringValue(node: BabelNode | undefined): string | null {
+  if (!node) {
+    return null;
+  }
+
+  if (node.type === "StringLiteral" && typeof node.value === "string") {
+    return node.value;
+  }
+
+  if (node.type === "Literal" && typeof node.value === "string") {
+    return node.value;
+  }
+
+  return null;
+}
+
+function parseWithBabel(code: string): BabelNode | null {
+  try {
+    return parseBabel(code, {
+      sourceType: "unambiguous",
+      errorRecovery: true,
+      ranges: true,
+      plugins: ["jsx", "typescript", "dynamicImport"],
+    }) as unknown as BabelNode;
+  } catch {
+    return null;
+  }
+}
+
+function convertBabelAstToIR(
+  code: string,
+  filePath: string,
+  language: ReturnType<typeof detectLanguage>,
+): FileNode {
+  const root = parseWithBabel(code);
+  if (!root) {
+    return {
+      filePath,
+      language,
+      functions: [],
+      dependencies: [],
+      nodes: [],
+    };
+  }
+
+  const dependencies: IRDependency[] = [];
+  const functions: MutableIRFunction[] = [];
+
+  const visit = (
+    node: BabelNode,
+    parent: BabelNode | undefined,
+    currentFunction: MutableIRFunction | undefined,
+  ): void => {
+    if (node.type === "ImportDeclaration") {
+      const sourceValue = babelStringValue(
+        node.source as BabelNode | undefined,
+      );
+      if (sourceValue) {
+        const importedSymbols = Array.isArray(node.specifiers)
+          ? (node.specifiers as BabelNode[])
+              .map((specifier) =>
+                babelMemberName(specifier.local as BabelNode | undefined),
+              )
+              .filter((name) => name !== "unknown")
+          : [];
+
+        dependencies.push({
+          id: `${filePath}:import:${node.start ?? dependencies.length}`,
+          sourceFilePath: filePath,
+          target: sourceValue,
+          kind: "import",
+          isExternal: isExternalTarget(sourceValue),
+          importedSymbols,
+        });
+      }
+    }
+
+    if (node.type === "TryStatement" && node.handler && currentFunction) {
+      currentFunction.hasTryCatch = true;
+    }
+
+    if (currentFunction && BABEL_COMPLEXITY_TYPES.has(node.type)) {
+      currentFunction.complexityScore += 1;
+    }
+
+    if (node.type === "CallExpression") {
+      const calleeNode = node.callee as BabelNode | undefined;
+      const calleeName = babelMemberName(calleeNode);
+      const location = getBabelLocation(node);
+
+      if (currentFunction) {
+        currentFunction.functionCalls.push(
+          location ? { calleeName, location } : { calleeName },
+        );
+      }
+
+      const firstArg = Array.isArray(node.arguments)
+        ? (node.arguments[0] as BabelNode | undefined)
+        : undefined;
+      const target = babelStringValue(firstArg);
+
+      if (target && (calleeName === "require" || calleeName === "import")) {
+        dependencies.push({
+          id: `${filePath}:${calleeName}:${node.start ?? dependencies.length}`,
+          sourceFilePath: filePath,
+          target,
+          kind: calleeName === "require" ? "require" : "dynamic-import",
+          isExternal: isExternalTarget(target),
+          importedSymbols: ["default"],
+        });
+      }
+    }
+
+    if (BABEL_FUNCTION_TYPES.has(node.type)) {
+      const functionName = babelFunctionName(node, parent);
+      const location = getBabelLocation(node);
+
+      const functionRecord: MutableIRFunction = {
+        id: `${filePath}:fn:${node.start ?? functions.length}`,
+        name: functionName,
+        filePath,
+        functionCalls: [],
+        isAsync: node.async === true,
+        hasTryCatch: false,
+        complexityScore: 1,
+        ...(location ? { location } : {}),
+      };
+
+      functions.push(functionRecord);
+
+      getBabelNodeChildren(node).forEach((child) => {
+        visit(child, node, functionRecord);
+      });
+      return;
+    }
+
+    getBabelNodeChildren(node).forEach((child) => {
+      visit(child, node, currentFunction);
+    });
+  };
+
+  visit(root, undefined, undefined);
+
+  const fileNode: FileNode = {
+    filePath,
+    language,
+    functions,
+    dependencies,
+    nodes: [],
+  };
+
+  fileNode.nodes = toLegacyNodes(fileNode);
+  return fileNode;
+}
+
 function toLegacyNodes(fileNode: FileNode): IRNode[] {
   const nodes: IRNode[] = [];
 
@@ -273,13 +584,7 @@ export function convertAstToIR(code: string, filePath: string): FileNode {
   const rootNode = parseCode(code);
 
   if (!rootNode) {
-    return {
-      filePath,
-      language,
-      functions: [],
-      dependencies: [],
-      nodes: [],
-    };
+    return convertBabelAstToIR(code, filePath, language);
   }
 
   const functions = collectFunctions(rootNode, filePath);

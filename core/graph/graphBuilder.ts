@@ -191,7 +191,7 @@ export function buildAnalysisGraph(
         filePath: fn.filePath,
         type: "function",
         label: fn.name,
-        location: fn.location,
+        ...(fn.location ? { location: fn.location } : {}),
         metadata: {
           async: fn.isAsync,
           hasTryCatch: fn.hasTryCatch,

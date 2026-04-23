@@ -3,13 +3,14 @@ import path from "node:path";
 
 import { analyzePerformance, traceFlow } from "@/core/analyzer";
 import { buildAnalysisGraph } from "@/core/graph";
+import type { GraphEdge, GraphNode } from "@/core/graph";
 import type {
   CodeRepositoryIR,
   IRFile,
   IRNode,
   SourceFileInput,
 } from "@/core/ir";
-import { convertAstToIR, parseCode } from "@/core/parser";
+import { convertAstToIR } from "@/core/parser";
 import { runRuleEngine } from "@/core/rules";
 import type { RuleIssue } from "@/core/rules";
 import { cloneRepository, scanRepositoryFiles } from "@/modules/repo";
@@ -86,6 +87,11 @@ export interface RepositoryAnalysisResult {
   graphSummary: GraphSummary;
 
   issues: AnalysisIssue[];
+
+  graphData: {
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+  };
 
   // Compatibility fields kept for existing consumers.
   irStats: {
@@ -215,9 +221,13 @@ async function resolveSourceFiles(
     localRepositoryPath = await cloneRepository({
       repositoryUrl: input.repositoryUrl,
       targetDirectory: cloneTargetDirectory,
-      branch: input.cloneBranch,
-      depth: input.cloneDepth,
-      existingFolderStrategy: input.existingFolderStrategy,
+      ...(input.cloneBranch ? { branch: input.cloneBranch } : {}),
+      ...(typeof input.cloneDepth === "number"
+        ? { depth: input.cloneDepth }
+        : {}),
+      ...(input.existingFolderStrategy
+        ? { existingFolderStrategy: input.existingFolderStrategy }
+        : {}),
     });
   }
 
@@ -234,21 +244,29 @@ export async function analyzeRepository(
 ): Promise<RepositoryAnalysisResult> {
   const sourceFiles = await resolveSourceFiles(input);
 
-  // Step 3: Parse source code into AST roots.
-  const parseResults = sourceFiles.map((file) => ({
-    file,
-    rootNode: parseCode(file.content),
-  }));
-
-  const parsedFiles = parseResults.filter(
-    (result) => result.rootNode !== null,
-  ).length;
-  const failedFiles = parseResults.length - parsedFiles;
-
-  // Step 4: Convert AST/code to IR.
-  const irFiles = parseResults.map((result) =>
-    convertAstToIR(result.file.content, result.file.path),
+  // Step 3 + 4: Parse source into AST and convert to IR.
+  const irFiles = sourceFiles.map((file) =>
+    convertAstToIR(file.content, file.path),
   );
+
+  const parsedFiles = sourceFiles.reduce((count, sourceFile, index) => {
+    const irFile = irFiles[index];
+    if (!irFile) {
+      return count;
+    }
+
+    const hasExtractedData =
+      irFile.nodes.length > 0 ||
+      (irFile.functions?.length ?? 0) > 0 ||
+      (irFile.dependencies?.length ?? 0) > 0;
+
+    // Empty files are valid parse targets and should not count as failures.
+    const isEmptySource = sourceFile.content.trim().length === 0;
+
+    return count + (hasExtractedData || isEmptySource ? 1 : 0);
+  }, 0);
+
+  const failedFiles = sourceFiles.length - parsedFiles;
 
   const repositoryIR = buildRepositoryIR(irFiles);
 
@@ -282,6 +300,10 @@ export async function analyzeRepository(
     irSummary,
     graphSummary,
     issues,
+    graphData: {
+      nodes: graph.nodes,
+      edges: graph.edges,
+    },
     irStats: collectIrStats(allIrNodes),
     graphStats: {
       totalNodes: graph.nodes.length,

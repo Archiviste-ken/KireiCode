@@ -1,12 +1,14 @@
 import type {
   AnalyzeRepositoryOptions,
   RepositoryAnalysisResult,
-  SourceFileInput,
 } from "@/core";
 
 export interface AnalyzeRequestBody {
-  repositoryPath?: string;
-  files?: SourceFileInput[];
+  repoUrl: string;
+  cloneTargetDirectory?: string;
+  cloneBranch?: string;
+  cloneDepth?: number;
+  existingFolderStrategy?: "reuse" | "clean" | "error";
   options?: AnalyzeRepositoryOptions;
 }
 
