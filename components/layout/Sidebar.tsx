@@ -9,7 +9,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 
-export function Sidebar() {
+export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
 
   const navLinks = [
@@ -19,8 +19,8 @@ export function Sidebar() {
     { name: "Chat", href: "/chat", icon: MessageSquare },
   ];
 
-  return (
-    <aside className="hidden h-full w-20 flex-col border-r border-white/10 bg-slate-950/70 backdrop-blur md:flex lg:w-52 transition-all duration-200">
+  const sidebarContent = (
+    <>
       <div className="flex h-16 items-center justify-center border-b border-white/10 px-4 lg:justify-start">
         <span className="text-xl font-bold tracking-tight text-white hidden lg:block">
           KireiCode
@@ -37,6 +37,7 @@ export function Sidebar() {
             <Link
               key={link.name}
               href={link.href}
+              onClick={() => onClose?.()}
               className={`flex items-center justify-center gap-3 rounded-md px-3 py-2.5 transition-colors lg:justify-start ${
                 isActive
                   ? "bg-cyan-400/15 text-cyan-200"
@@ -47,10 +48,37 @@ export function Sidebar() {
               <span className="hidden lg:block text-sm font-medium">
                 {link.name}
               </span>
+              <span className="lg:hidden text-sm font-medium md:hidden">
+                {link.name}
+              </span>
             </Link>
           );
         })}
       </nav>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar */}
+      <aside className="hidden h-full w-20 flex-col border-r border-white/10 bg-slate-950/70 backdrop-blur md:flex lg:w-52 transition-all duration-200 shrink-0">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile Sidebar Overlay */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm md:hidden"
+          onClick={onClose}
+        >
+          <aside 
+            className="h-full w-64 bg-slate-950 flex flex-col border-r border-white/10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }

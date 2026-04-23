@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react"; // for mobile toggle later if needed
 import { useApi } from "@/hooks/useApi";
 
-export function Topbar() {
+export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const pathname = usePathname();
   const { lastAnalysis } = useApi();
   let title = "Dashboard";
@@ -17,7 +17,10 @@ export function Topbar() {
   return (
     <header className="h-15 shrink-0 border-b border-white/10 bg-slate-950/75 backdrop-blur flex items-center justify-between px-4 lg:px-6">
       <div className="flex items-center gap-3">
-        <button className="md:hidden text-gray-400 hover:text-white">
+        <button 
+          onClick={onMenuClick}
+          className="md:hidden text-gray-400 hover:text-white p-1 hover:bg-white/5 rounded-md"
+        >
           <Menu size={20} />
         </button>
         <h1 className="text-lg font-semibold text-white">{title}</h1>

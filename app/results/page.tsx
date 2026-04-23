@@ -143,7 +143,7 @@ export default function ResultsPage() {
             </div>
 
             {/* Simulated Node Visual */}
-            <div className="relative h-85 overflow-hidden rounded-xl border border-[#ffffff0f] bg-[#11161d] sm:h-105">
+            <div className="relative min-h-[400px] overflow-hidden rounded-xl border border-[#ffffff0f] bg-[#11161d] sm:min-h-[500px]">
               {hasGraphData ? (
                 <DynamicCodeGraph nodes={graphNodes} edges={graphEdges} />
               ) : (
