@@ -85,6 +85,16 @@ export interface RepositoryAnalysisResult {
   irSummary: IRSummary;
   graphSummary: GraphSummary;
 
+  techStack: {
+    framework?: string;
+    language?: string;
+    styling?: string;
+    database?: string;
+    api?: string;
+    ai?: string;
+    tools?: string[];
+  };
+
   issues: AnalysisIssue[];
 
   graphData: {
@@ -106,6 +116,80 @@ export interface RepositoryAnalysisResult {
   findings: AnalysisIssue[];
   performance: ReturnType<typeof analyzePerformance>["performance"];
   traces: ReturnType<typeof traceFlow>[];
+}
+
+function detectTechStack(irFiles: IRFile[], sourceFiles: SourceFileInput[]): RepositoryAnalysisResult["techStack"] {
+  const filePaths = irFiles.map(f => f.filePath.toLowerCase());
+  const content = irFiles.map(f => f.nodes.map(n => n.name).join(" ")).join(" ");
+  
+  // Try to find package.json
+  const packageJsonFile = sourceFiles.find(f => f.path.toLowerCase().endsWith("package.json"));
+  let pkgDeps: Record<string, string> = {};
+  if (packageJsonFile) {
+    try {
+      const pkg = JSON.parse(packageJsonFile.content);
+      pkgDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+
+  const stack: RepositoryAnalysisResult["techStack"] = {
+    framework: "Node.js",
+    language: "JavaScript",
+    styling: "CSS",
+    database: "None",
+    api: "REST",
+    ai: "None",
+    tools: []
+  };
+
+  const hasDep = (name: string) => pkgDeps[name] !== undefined;
+
+  // Framework Detection
+  if (hasDep("next") || filePaths.some(p => p.includes("next.config"))) stack.framework = "Next.js";
+  else if (hasDep("vite") || filePaths.some(p => p.includes("vite.config"))) stack.framework = "Vite";
+  else if (hasDep("nuxt") || filePaths.some(p => p.includes("nuxt.config"))) stack.framework = "Nuxt.js";
+  else if (hasDep("react")) stack.framework = "React";
+  else if (hasDep("@nestjs/core")) stack.framework = "NestJS";
+  
+  // Language Detection
+  if (hasDep("typescript") || filePaths.some(p => p.endsWith(".ts") || p.endsWith(".tsx"))) stack.language = "TypeScript";
+  
+  // Styling Detection
+  if (hasDep("tailwindcss") || filePaths.some(p => p.includes("tailwind.config")) || content.includes("tailwind")) stack.styling = "Tailwind CSS";
+  else if (hasDep("styled-components") || content.includes("styled-components") || content.includes("styled.")) stack.styling = "Styled Components";
+  else if (hasDep("@emotion/react") || hasDep("@emotion/styled")) stack.styling = "Emotion";
+  else if (hasDep("sass")) stack.styling = "SASS/SCSS";
+
+  // Database Detection
+  if (hasDep("prisma") || hasDep("@prisma/client") || content.includes("prisma")) stack.database = "Prisma/ORM";
+  else if (hasDep("mongoose") || hasDep("mongodb") || content.includes("mongoose") || content.includes("mongodb")) stack.database = "MongoDB";
+  else if (hasDep("pg") || hasDep("postgres") || content.includes("pg") || content.includes("postgres")) stack.database = "PostgreSQL";
+  else if (hasDep("mysql") || hasDep("mysql2")) stack.database = "MySQL";
+  else if (hasDep("redis")) stack.database = "Redis";
+
+  // API Detection
+  if (hasDep("apollo-server") || hasDep("@apollo/client") || content.includes("apollo") || content.includes("graphql")) stack.api = "GraphQL";
+  else if (hasDep("@trpc/server") || hasDep("@trpc/client") || content.includes("trpc")) stack.api = "tRPC";
+  else if (hasDep("fastify")) stack.api = "Fastify/REST";
+  else if (hasDep("express")) stack.api = "Express/REST";
+
+  // AI Detection
+  if (hasDep("openai") || content.includes("openai") || content.includes("gpt-")) stack.ai = "OpenAI";
+  else if (hasDep("groq") || content.includes("groq") || content.includes("llama")) stack.ai = "Groq (LLaMA)";
+  else if (hasDep("anthropic") || content.includes("anthropic") || content.includes("claude")) stack.ai = "Anthropic";
+  else if (hasDep("langchain")) stack.ai = "LangChain";
+
+  // Tools/Other
+  const tools = [];
+  if (hasDep("eslint")) tools.push("ESLint");
+  if (hasDep("prettier")) tools.push("Prettier");
+  if (hasDep("jest") || hasDep("vitest")) tools.push("Testing");
+  if (hasDep("docker")) tools.push("Docker");
+  stack.tools = tools;
+
+  return stack;
 }
 
 function collectIrStats(nodes: IRNode[]): RepositoryAnalysisResult["irStats"] {
@@ -282,6 +366,7 @@ export async function analyzeRepository(
   const allIrNodes = irFiles.flatMap((file) => file.nodes);
   const irSummary = collectIrSummary(irFiles, parsedFiles, failedFiles);
   const graphSummary = collectGraphSummary(graph);
+  const techStack = detectTechStack(irFiles, sourceFiles);
 
   const traces = input.options?.traceFromNodeId
     ? [
@@ -298,6 +383,7 @@ export async function analyzeRepository(
     fileCount: sourceFiles.length,
     irSummary,
     graphSummary,
+    techStack,
     issues,
     graphData: {
       nodes: graph.nodes,

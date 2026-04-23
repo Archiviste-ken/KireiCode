@@ -12,6 +12,7 @@ import {
 import { useApi } from "@/hooks/useApi";
 import { ExecutionFlow } from "@/components/ExecutionFlow";
 import { IssueItem } from "@/components/IssueItem";
+import { TechStack } from "@/components/TechStack";
 
 const DynamicCodeGraph = dynamic(() => import("@/components/CodeGraph"), {
   ssr: false,
@@ -156,6 +157,11 @@ export default function ResultsPage() {
                 Interactive Topology Map
               </p>
             </div>
+          </section>
+
+          {/* Tech Stack Infrastructure Panel */}
+          <section>
+            <TechStack techStack={analysis.techStack} />
           </section>
 
           {/* Execution Flow */}
